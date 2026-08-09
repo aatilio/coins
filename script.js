@@ -9,6 +9,7 @@ const moneda = document.getElementById('moneda');
 let allCoins = [];
 let chart = null;
 let currentMoneda = 'usd';
+const CACHE_TTL = 120000;
 
 document.getElementById('year').textContent = new Date().getFullYear();
 
@@ -58,6 +59,49 @@ function initTheme() {
     });
 }
 
+function getCache(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const { data, ts } = JSON.parse(raw);
+        if (Date.now() - ts > CACHE_TTL) {
+            localStorage.removeItem(key);
+            return null;
+        }
+        return data;
+    } catch { return null; }
+}
+
+function setCache(key, data) {
+    try {
+        localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+    } catch { localStorage.clear(); }
+}
+
+async function fetchWithRetry(url, retries = 2, delay = 1500) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const res = await fetch(url);
+            if (res.status === 429) {
+                if (i < retries) {
+                    await new Promise(r => setTimeout(r, delay * (i + 1)));
+                    continue;
+                }
+                return null;
+            }
+            if (!res.ok) throw new Error(res.status);
+            return await res.json();
+        } catch (e) {
+            if (i < retries) {
+                await new Promise(r => setTimeout(r, delay * (i + 1)));
+            } else {
+                throw e;
+            }
+        }
+    }
+    return null;
+}
+
 function fmt(n, currency) {
     const cur = currency || currentMoneda;
     const symbols = { usd: '$', mxn: 'MX$', eur: '\u20AC', gbp: '\u00A3' };
@@ -70,28 +114,68 @@ function fmt(n, currency) {
 }
 
 async function loadGlobalData() {
+    const cacheKey = `global_${currentMoneda}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+        applyGlobalData(cached);
+        return;
+    }
     try {
-        const res = await fetch('https://api.coingecko.com/api/v3/global');
-        const data = await res.json();
-        const g = data.data;
-        document.getElementById('globalMarketCap').textContent = fmt(g.total_market_cap[currentMoneda]);
-        document.getElementById('globalVolume').textContent = fmt(g.total_volume[currentMoneda]);
-        document.getElementById('btcDominance').textContent = g.market_cap_percentage[currentMoneda]
-            ? g.market_cap_percentage[currentMoneda].toFixed(1) + '%'
-            : '--';
+        const data = await fetchWithRetry('https://api.coingecko.com/api/v3/global');
+        if (data && data.data) {
+            setCache(cacheKey, data.data);
+            applyGlobalData(data.data);
+        }
     } catch (e) {
         console.error('Error loading global data:', e);
     }
 }
 
+function applyGlobalData(g) {
+    document.getElementById('globalMarketCap').textContent = fmt(g.total_market_cap[currentMoneda]);
+    document.getElementById('globalVolume').textContent = fmt(g.total_volume[currentMoneda]);
+    document.getElementById('btcDominance').textContent = g.market_cap_percentage[currentMoneda]
+        ? g.market_cap_percentage[currentMoneda].toFixed(1) + '%'
+        : '--';
+}
+
 async function loadCoins() {
-    try {
-        const res = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currentMoneda}&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d`);
-        allCoins = await res.json();
+    const cacheKey = `coins_${currentMoneda}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+        allCoins = cached;
         renderCards(allCoins);
+        return;
+    }
+    try {
+        const data = await fetchWithRetry(
+            `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currentMoneda}&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d`
+        );
+        if (data && Array.isArray(data)) {
+            allCoins = data;
+            setCache(cacheKey, allCoins);
+            renderCards(allCoins);
+        } else {
+            showCoinsError();
+        }
     } catch (e) {
         console.error('Error loading coins:', e);
-        cryptoGrid.innerHTML = '<p class="error-msg">Error al cargar datos. Intenta de nuevo.</p>';
+        showCoinsError();
+    }
+}
+
+function showCoinsError() {
+    const cachedAny = getCache(`coins_${currentMoneda}`);
+    if (cachedAny) {
+        allCoins = cachedAny;
+        renderCards(allCoins);
+    } else {
+        cryptoGrid.innerHTML = `
+            <div class="error-box">
+                <p class="error-msg">Error al cargar datos.</p>
+                <button class="retry-btn" onclick="location.reload()">Reintentar</button>
+            </div>
+        `;
     }
 }
 
@@ -175,14 +259,31 @@ async function openDetail(coin) {
     document.body.classList.add('no-scroll');
 
     try {
-        const [chartRes, detailRes] = await Promise.all([
-            fetch(`https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=30`),
-            fetch(`https://api.coingecko.com/api/v3/coins/${coin.id}?localization=false&tickers=false&community_data=false&developer_data=false`)
-        ]);
-        const chartData = await chartRes.json();
-        const detail = await detailRes.json();
-        const md = detail.market_data;
+        const cacheKey = `detail_${coin.id}_${currentMoneda}`;
+        const cached = getCache(cacheKey);
 
+        let chartData, detail;
+        if (cached) {
+            chartData = cached.chartData;
+            detail = cached.detail;
+        } else {
+            const [chartRes, detailRes] = await Promise.all([
+                fetchWithRetry(`https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=30`),
+                fetchWithRetry(`https://api.coingecko.com/api/v3/coins/${coin.id}?localization=false&tickers=false&community_data=false&developer_data=false`)
+            ]);
+            chartData = chartRes;
+            detail = detailRes;
+            if (chartData && detail) {
+                setCache(cacheKey, { chartData, detail });
+            }
+        }
+
+        if (!chartData || !detail) {
+            detailContent.innerHTML = '<p class="error-msg">Error al cargar detalles. Intenta de nuevo.</p>';
+            return;
+        }
+
+        const md = detail.market_data;
         const position24h = md.high_24h[currentMoneda] !== md.low_24h[currentMoneda]
             ? ((md.current_price[currentMoneda] - md.low_24h[currentMoneda]) / (md.high_24h[currentMoneda] - md.low_24h[currentMoneda])) * 100
             : 50;
@@ -285,9 +386,10 @@ async function openDetail(coin) {
                 detailContent.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
                 try {
-                    const r = await fetch(`https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=${e.target.dataset.days}`);
-                    const d = await r.json();
-                    renderChart(d.prices);
+                    const r = await fetchWithRetry(
+                        `https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=${e.target.dataset.days}`
+                    );
+                    if (r && r.prices) renderChart(r.prices);
                 } catch (err) { console.error(err); }
             });
         });

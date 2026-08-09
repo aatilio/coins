@@ -1,0 +1,54 @@
+name: Server implementation ok
+
+on:
+  push:
+    branches:
+      - main
+
+# Cancela ejecuciones en curso si haces un nuevo push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout código
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 📦 Instalar pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          run_install: false
+
+      - name: 📂 Cache de pnpm
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: 📦 Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: 🔨 Construir proyecto (Build)
+        run: pnpm build
+
+      - name: 📂 Subir vía FTP (Solo archivos cambiados)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /alan.arahocorp.com/htdocs/coins/
+          # Esta acción solo sube los archivos que han cambiado, lo cual es muy eficiente
