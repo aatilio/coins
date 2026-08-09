@@ -1,0 +1,8 @@
+{
+  "name": "coins",
+  "version": "1.0.0",
+  "description": "Cotizador de criptomonedas",
+  "scripts": {
+    "build": "echo 'Static site - no build needed'"
+  }
+}
