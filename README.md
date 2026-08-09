@@ -28,6 +28,6 @@ Cotizador de criptomonedas con analisis de precios y graficos historicos, usando
 
 ## Demo
 
-![image](https://github.com/alanatilio/alanatilio.github.io/blob/main/crypto/coins.png)
+![image](https://raw.githubusercontent.com/aatilio/coins/main/coins.png)
 
 Desarrollado por [Alan C.A.](https://alan.arahocorp.com)
