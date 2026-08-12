@@ -24,4 +24,4 @@ jobs:
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
-          server-dir: /alan.arahocorp.com/htdocs/coins/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
