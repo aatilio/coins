@@ -920,13 +920,32 @@ body.light ::-webkit-scrollbar-thumb:hover {
 
     .detail-panel {
         padding: 0;
-        padding-top: var(--topbar-h);
+        padding-top: 0;
+        align-items: stretch;
     }
 
     .detail-content {
-        padding: 18px;
+        padding: 20px 16px 24px;
         border-radius: 0;
-        min-height: calc(100vh - var(--topbar-h));
+        max-height: 100vh;
+        height: 100vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .close-detail {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        float: none;
+        width: 32px;
+        height: 32px;
+        font-size: 18px;
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .detail-header {
+        padding-right: 40px;
     }
 
     .detail-name { font-size: 16px; }
