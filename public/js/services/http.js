@@ -1,12 +1,16 @@
+import { CONFIG } from '../config.js';
+
+const hasApiKey = () => Boolean(CONFIG.API_KEY);
+
 let activeRequests = 0;
-const MAX_CONCURRENT = 1;
-const MIN_REQUEST_INTERVAL = 1500;
+const MAX_CONCURRENT = () => (hasApiKey() ? 3 : 1);
+const MIN_REQUEST_INTERVAL = () => (hasApiKey() ? 300 : 1500);
 const requestQueue = [];
 let lastRequestTime = 0;
 let rateLimitUntil = 0;
 
 function processQueue() {
-    while (requestQueue.length > 0 && activeRequests < MAX_CONCURRENT) {
+    while (requestQueue.length > 0 && activeRequests < MAX_CONCURRENT()) {
         const { fn, resolve, reject } = requestQueue.shift();
         activeRequests++;
         fn().then(resolve).catch(reject).finally(() => {
@@ -25,14 +29,14 @@ export function queueFetch(fn) {
 
 async function waitForRateLimit() {
     const now = Date.now();
-    const waitUntil = Math.max(lastRequestTime + MIN_REQUEST_INTERVAL, rateLimitUntil);
+    const waitUntil = Math.max(lastRequestTime + MIN_REQUEST_INTERVAL(), rateLimitUntil);
     if (now < waitUntil) {
         await new Promise(r => setTimeout(r, waitUntil - now));
     }
     lastRequestTime = Date.now();
 }
 
-export async function fetchWithRetry(url, retries = 3, delay = 5000) {
+export async function fetchWithRetry(url, retries = 3, delay = 3000) {
     for (let i = 0; i <= retries; i++) {
         try {
             await waitForRateLimit();

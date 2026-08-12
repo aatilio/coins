@@ -32,21 +32,28 @@ export async function openDetail(coin) {
         let chartData = getCache(chartKey, CACHE_TTL.chart);
         let detail = getCache(detailKey, CACHE_TTL.detail);
 
+        const fetches = [];
         if (!chartData) {
-            const chartRes = await getMarketChart(coin.id, state.currentMoneda, CHART_DAYS);
-            if (chartRes) {
-                chartData = chartRes;
-                setCache(chartKey, chartData);
-            }
+            fetches.push(
+                getMarketChart(coin.id, state.currentMoneda, CHART_DAYS).then(res => {
+                    if (res) {
+                        chartData = res;
+                        setCache(chartKey, chartData);
+                    }
+                })
+            );
         }
-
         if (!detail) {
-            const detailRes = await getCoinDetail(coin.id);
-            if (detailRes) {
-                detail = detailRes;
-                setCache(detailKey, detail);
-            }
+            fetches.push(
+                getCoinDetail(coin.id).then(res => {
+                    if (res) {
+                        detail = res;
+                        setCache(detailKey, detail);
+                    }
+                })
+            );
         }
+        if (fetches.length) await Promise.all(fetches);
 
         if (!chartData) chartData = getStaleCache(chartKey);
         if (!detail) detail = getStaleCache(detailKey);
