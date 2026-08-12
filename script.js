@@ -78,7 +78,29 @@ function setCache(key, data) {
     } catch { localStorage.clear(); }
 }
 
-async function fetchWithRetry(url, retries = 2, delay = 1500) {
+let activeRequests = 0;
+const MAX_CONCURRENT = 2;
+let requestQueue = [];
+
+function processQueue() {
+    while (requestQueue.length > 0 && activeRequests < MAX_CONCURRENT) {
+        const { fn, resolve, reject } = requestQueue.shift();
+        activeRequests++;
+        fn().then(resolve).catch(reject).finally(() => {
+            activeRequests--;
+            processQueue();
+        });
+    }
+}
+
+function queueFetch(fn) {
+    return new Promise((resolve, reject) => {
+        requestQueue.push({ fn, resolve, reject });
+        processQueue();
+    });
+}
+
+async function fetchWithRetry(url, retries = 3, delay = 3000) {
     for (let i = 0; i <= retries; i++) {
         try {
             const res = await fetch(url);
@@ -267,10 +289,12 @@ async function openDetail(coin) {
             chartData = cached.chartData;
             detail = cached.detail;
         } else {
-            const [chartRes, detailRes] = await Promise.all([
-                fetchWithRetry(`https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=30`),
+            const chartRes = await queueFetch(() =>
+                fetchWithRetry(`https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=30`)
+            );
+            const detailRes = await queueFetch(() =>
                 fetchWithRetry(`https://api.coingecko.com/api/v3/coins/${coin.id}?localization=false&tickers=false&community_data=false&developer_data=false`)
-            ]);
+            );
             chartData = chartRes;
             detail = detailRes;
             if (chartData && detail) {
@@ -386,8 +410,8 @@ async function openDetail(coin) {
                 detailContent.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
                 try {
-                    const r = await fetchWithRetry(
-                        `https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=${e.target.dataset.days}`
+                    const r = await queueFetch(() =>
+                        fetchWithRetry(`https://api.coingecko.com/api/v3/coins/${coin.id}/market_chart?vs_currency=${currentMoneda}&days=${e.target.dataset.days}`)
                     );
                     if (r && r.prices) renderChart(r.prices);
                 } catch (err) { console.error(err); }
