@@ -35,10 +35,15 @@ const config = readFileSync(configPath, 'utf8').replace(
 );
 writeFileSync(configPath, config);
 
-writeFileSync(join(dist, '.htaccess'), `RewriteEngine On
+writeFileSync(join(dist, '.htaccess'), `Options -Indexes
+RewriteEngine On
+RewriteBase /coins/
 
+# No reescribir archivos o directorios existentes
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
+
+# Reescribir todo lo demas al index.html del subdirectorio
 RewriteRule ^ index.html [L]
 `);
 
